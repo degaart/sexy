@@ -1,5 +1,5 @@
+use anyhow::{bail, Result};
 use std::{ffi::CString, os::raw::c_char, path::Path};
-use anyhow::{Result, bail};
 
 pub struct StrConverter {
     data: CString,
@@ -35,6 +35,3 @@ impl PathConverter {
         self.data.as_ptr() as *const c_char
     }
 }
-
-
-

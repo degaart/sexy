@@ -1,5 +1,5 @@
-use std::io::Write;
 use log::info;
+use std::io::Write;
 pub mod ffi;
 
 #[macro_export]
