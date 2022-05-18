@@ -23,7 +23,7 @@ pub struct PathConverter {
 impl PathConverter {
     pub fn new(s: impl AsRef<Path>) -> Result<Self> {
         let as_string = s.as_ref().to_str();
-        if let None = as_string {
+        if as_string.is_none() {
             bail!("Path contains invalid UTF-8 characters");
         }
 
