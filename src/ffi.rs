@@ -1,4 +1,7 @@
-struct StrConverter {
+use std::{ffi::CString, os::raw::c_char, path::Path};
+use anyhow::{Result, bail};
+
+pub struct StrConverter {
     data: CString,
 }
 
@@ -13,7 +16,7 @@ impl StrConverter {
     }
 }
 
-struct PathConverter {
+pub struct PathConverter {
     data: CString,
 }
 
@@ -21,7 +24,7 @@ impl PathConverter {
     pub fn new(s: impl AsRef<Path>) -> Result<Self> {
         let as_string = s.as_ref().to_str();
         if let None = as_string {
-            bail!("Invalid path");
+            bail!("Path contains invalid UTF-8 characters");
         }
 
         let data = CString::new(as_string.unwrap())?;
