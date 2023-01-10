@@ -4,9 +4,17 @@ use std::{io::Write, ffi::{c_char, CString, CStr}, mem, ptr, path::Path, borrow:
 pub mod ffi;
 use anyhow::bail;
 
+#[cfg(feature = "crypto")]
+pub mod crypto;
+
 #[macro_export]
 macro_rules! regex {
     ($re:literal $(,)?) => {{
+        static RE: once_cell::sync::OnceCell<regex::Regex> = once_cell::sync::OnceCell::new();
+        RE.get_or_init(|| regex::Regex::new($re).unwrap())
+    }};
+
+    ($re:expr) => {{
         static RE: once_cell::sync::OnceCell<regex::Regex> = once_cell::sync::OnceCell::new();
         RE.get_or_init(|| regex::Regex::new($re).unwrap())
     }};
@@ -80,3 +88,4 @@ pub fn format_date(timestamp: u64, fmt: &str) -> anyhow::Result<String> {
         Ok(result.to_string())
     }
 }
+
