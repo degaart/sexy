@@ -30,20 +30,29 @@ pub fn init_logging() {
                     Ok(ts) => ts,
                     Err(_) => "".to_string()
                 };
-            let file = Path::new(record.file().unwrap_or(""));
-            writeln!(
-                buf,
-                "[{}][{}][{}:{}:{}] {}",
-                ts,
-                record.level(),
-                record.module_path().unwrap_or(""),
-                if let Some(name) = file.file_name() {
-                    name.to_string_lossy()
-                } else {
-                    Cow::from("")
-                },
-                record.line().unwrap_or(0),
-                record.args())
+            if cfg!(debug_assertions) {
+                let file = Path::new(record.file().unwrap_or(""));
+                writeln!(
+                    buf,
+                    "[{}][{}][{}:{}:{}] {}",
+                    ts,
+                    record.level(),
+                    record.module_path().unwrap_or(""),
+                    if let Some(name) = file.file_name() {
+                        name.to_string_lossy()
+                    } else {
+                        Cow::from("")
+                    },
+                    record.line().unwrap_or(0),
+                    record.args())
+            } else {
+                writeln!(
+                    buf,
+                    "[{}][{}] {}",
+                    ts,
+                    record.level(),
+                    record.args())
+            }
         })
         .init();
 }
