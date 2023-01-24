@@ -20,17 +20,34 @@ macro_rules! regex {
     }};
 }
 
-pub fn init_logging() {
+pub enum Source {
+    Show,
+    Hide
+}
+
+impl Default for Source {
+    fn default() -> Self {
+        if cfg!(debug_assertions) {
+            Self::Show
+        } else {
+            Self::Hide
+        }
+    }
+}
+
+pub fn init_logging(show_source: Source) {
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
-        .format(|buf, record| {
-            let ts = format_date(unsafe { libc::time(ptr::null_mut()) as u64}, "%Y-%m-%d %H:%M:%S");
+        .format(move |buf, record| {
+            let ts = format_date(unsafe {
+                libc::time(ptr::null_mut()) as u64
+            }, "%Y-%m-%d %H:%M:%S");
             let ts =
                 match ts {
                     Ok(ts) => ts,
                     Err(_) => "".to_string()
                 };
-            if cfg!(debug_assertions) {
+            if let Source::Show = show_source {
                 let file = Path::new(record.file().unwrap_or(""));
                 writeln!(
                     buf,
