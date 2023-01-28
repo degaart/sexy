@@ -1,8 +1,9 @@
+pub mod ffi;
+pub use log::LevelFilter;
+use anyhow::bail;
 use libc::localtime_r;
 use log::info;
 use std::{io::Write, ffi::{c_char, CString, CStr}, mem, ptr, path::Path, borrow::Cow};
-pub mod ffi;
-use anyhow::bail;
 
 #[cfg(feature = "crypto")]
 pub mod crypto;
@@ -20,58 +21,118 @@ macro_rules! regex {
     }};
 }
 
-pub enum Source {
-    Show,
-    Hide
+
+pub struct LoggerBuilder {
+    show_source: bool,
+    level: LevelFilter,
+    log_exit: bool,
+    date_format: String,
 }
 
-impl Default for Source {
+impl Default for LoggerBuilder {
     fn default() -> Self {
-        if cfg!(debug_assertions) {
-            Self::Show
+        let show_source = cfg!(debug_assertions);
+        let level = if cfg!(debug_assertions) {
+            LevelFilter::Debug
         } else {
-            Self::Hide
+            LevelFilter::Info
+        };
+        Self {
+            show_source,
+            level,
+            log_exit: true,
+            date_format: String::from("%Y-%m-%d %H:%M:%S"),
         }
     }
 }
 
-pub fn init_logging(show_source: Source) {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .format(move |buf, record| {
-            let ts = format_date(unsafe {
-                libc::time(ptr::null_mut()) as u64
-            }, "%Y-%m-%d %H:%M:%S");
-            let ts =
-                match ts {
-                    Ok(ts) => ts,
-                    Err(_) => "".to_string()
-                };
-            if let Source::Show = show_source {
-                let file = Path::new(record.file().unwrap_or(""));
-                writeln!(
-                    buf,
-                    "[{}][{}][{}:{}:{}] {}",
-                    ts,
-                    record.level(),
-                    record.module_path().unwrap_or(""),
-                    if let Some(name) = file.file_name() {
-                        name.to_string_lossy()
-                    } else {
-                        Cow::from("")
-                    },
-                    record.line().unwrap_or(0),
-                    record.args())
-            } else {
-                writeln!(
-                    buf,
-                    "[{}][{}] {}",
-                    ts,
-                    record.level(),
-                    record.args())
-            }
-        })
-        .init();
+impl LoggerBuilder {
+    pub fn show_source(mut self, show: bool) -> Self {
+        self.show_source = show;
+        self
+    }
+
+    pub fn level(mut self, level: LevelFilter) -> Self {
+        self.level = level;
+        self
+    }
+
+    pub fn log_exit(mut self, log: bool) -> Self {
+        self.log_exit = log;
+        self
+    }
+
+    pub fn date_format(mut self, format: &str) -> Self {
+        self.date_format = format.to_string();
+        self
+    }
+
+    pub fn build(self) -> Logger {
+        env_logger::builder()
+            .filter_level(self.level)
+            .format(move |buf, record| {
+                let ts = format_date(unsafe {
+                    libc::time(ptr::null_mut()) as u64
+                }, &self.date_format);
+                let ts =
+                    match ts {
+                        Ok(ts) => ts,
+                        Err(_) => "".to_string()
+                    };
+                if self.show_source {
+                    let file = Path::new(record.file().unwrap_or(""));
+                    writeln!(
+                        buf,
+                        "[{}][{}][{}:{}:{}] {}",
+                        ts,
+                        record.level(),
+                        record.module_path().unwrap_or(""),
+                        if let Some(name) = file.file_name() {
+                            name.to_string_lossy()
+                        } else {
+                            Cow::from("")
+                        },
+                        record.line().unwrap_or(0),
+                        record.args())
+                } else {
+                    writeln!(
+                        buf,
+                        "[{}][{}] {}",
+                        ts,
+                        record.level(),
+                        record.args())
+                }
+            })
+            .init();
+        Logger {
+            log_exit: self.log_exit,
+        }
+    }
+
+}
+
+pub struct Logger {
+    log_exit: bool,
+}
+
+impl Logger {
+    pub fn builder() -> LoggerBuilder {
+        LoggerBuilder::default()
+    }
+}
+
+impl Drop for Logger {
+    fn drop(&mut self) {
+        if self.log_exit {
+            info!("Exited");
+        }
+    }
+}
+
+#[deprecated]
+pub fn init_logging() {
+    let _ = Logger::builder()
+        .build();
 }
 
 pub struct LogExit {}
