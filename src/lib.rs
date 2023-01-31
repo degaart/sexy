@@ -176,3 +176,46 @@ pub fn format_date(timestamp: u64, fmt: &str) -> anyhow::Result<String> {
     }
 }
 
+pub fn disk_free_space(path: impl AsRef<Path>) -> anyhow::Result<u64> {
+    use std::mem::MaybeUninit;
+    use std::os::unix::ffi::OsStrExt;
+    use std::io::Error;
+
+    let mut st: MaybeUninit<libc::statvfs> = MaybeUninit::uninit();
+    let p = path.as_ref().as_os_str();
+    let pb = p.as_bytes().as_ptr();
+    let ret = unsafe { libc::statvfs(pb as *const i8, st.as_mut_ptr()) };
+    if ret != 0 {
+        let errno = Error::last_os_error().raw_os_error();
+        if let Some(errno) = errno {
+            let errmsg = unsafe { CStr::from_ptr(libc::strerror(errno)).to_string_lossy().to_string() };
+            bail!("Failed to get free disk space for {}: {errmsg}", path.as_ref().display());
+        } else {
+            bail!("Failed to get free disk space for {}", path.as_ref().display());
+        };
+    }
+
+    let st  = unsafe { st.assume_init() };
+    if cfg!(target_os = "macos") {
+        Ok(st.f_frsize as u64 * st.f_bfree as u64)
+    } else if cfg!(target_os = "linux") {
+        Ok(st.f_bsize as u64 * st.f_bfree as u64)
+    } else {
+        todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::disk_free_space;
+
+
+    #[test]
+    fn test_disk_free_space() {
+        let df = disk_free_space("/Users").unwrap();
+        dbg!(&df);
+    }
+
+}
+
+
