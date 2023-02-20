@@ -119,6 +119,10 @@ impl Logger {
     pub fn builder() -> LoggerBuilder {
         LoggerBuilder::default()
     }
+
+    pub fn level(&self, level: LevelFilter) {
+        log::set_max_level(level);
+    }
 }
 
 impl Drop for Logger {
