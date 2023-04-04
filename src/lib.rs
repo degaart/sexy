@@ -239,7 +239,7 @@ pub fn format_date(timestamp: u64, fmt: &str) -> anyhow::Result<String> {
 #[cfg(windows)]
 pub unsafe fn string_from_lpcwstr(ptr: *const u16) -> OsString {
     use std::os::windows::ffi::OsStringExt;
-    use windows_sys::Win32::Globalization::lstrlenW;
+    use winapi::um::winbase::lstrlenW;
 
     let len = lstrlenW(ptr) as usize;
     let slice = std::slice::from_raw_parts(ptr, len);
@@ -249,13 +249,13 @@ pub unsafe fn string_from_lpcwstr(ptr: *const u16) -> OsString {
 
 #[cfg(windows)]
 pub fn last_win32_error() -> (u32, String) {
-    use windows_sys::Win32::Foundation::GetLastError;
-    use windows_sys::Win32::System::Diagnostics::Debug::{
+    use winapi::um::errhandlingapi::GetLastError;
+    use winapi::um::winbase::{
         FormatMessageW,
         FORMAT_MESSAGE_ALLOCATE_BUFFER,
         FORMAT_MESSAGE_FROM_SYSTEM
     };
-    use windows_sys::Win32::System::Memory::LocalFree;
+    use winapi::um::winbase::LocalFree;
 
     unsafe {
         let last_error = GetLastError();
@@ -273,7 +273,7 @@ pub fn last_win32_error() -> (u32, String) {
         }
 
         let s = string_from_lpcwstr(buffer);
-        LocalFree(buffer as isize);
+        LocalFree(buffer as *mut libc::c_void);
 
         (last_error, s.to_string_lossy().into_owned())
     }
@@ -282,13 +282,20 @@ pub fn last_win32_error() -> (u32, String) {
 #[cfg(windows)]
 pub fn disk_free_space(path: impl AsRef<Path>) -> Result<u64, io::Error> {
     use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    use winapi::um::fileapi::GetDiskFreeSpaceExW;
 
     let mut buf: Vec<u16> = path.as_ref().as_os_str().encode_wide().collect();
     buf.push(0);
 
     let mut free_space = 0_u64;
-    if unsafe { GetDiskFreeSpaceExW(buf.as_ptr(), ptr::null_mut(), ptr::null_mut(), &mut free_space) } == 0 {
+    let ret = unsafe {
+        GetDiskFreeSpaceExW(
+            buf.as_ptr(), 
+            ptr::null_mut(), 
+            ptr::null_mut(), 
+            mem::transmute(&mut free_space))
+    };
+    if ret == 0 {
         let (_, msg) = last_win32_error();
         let trimmed_msg = msg.trim_end();
         return Err(io::Error::new(io::ErrorKind::Other, trimmed_msg));
