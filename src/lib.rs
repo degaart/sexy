@@ -1,9 +1,13 @@
 pub mod ffi;
+
 pub use log::LevelFilter;
+
 use anyhow::bail;
-use libc::localtime_r;
 use log::info;
-use std::{io::Write, ffi::{c_char, CString, CStr}, mem, ptr, path::Path, borrow::Cow};
+use std::{io::{self, Write, Error}, ffi::{c_char, CString, CStr}, mem, ptr, path::Path, borrow::Cow};
+
+#[cfg(windows)]
+use std::ffi::OsString;
 
 #[cfg(feature = "crypto")]
 pub mod crypto;
@@ -148,27 +152,79 @@ impl Drop for LogExit {
 }
 
 extern "C" {
-    fn strptime(buf: *const c_char, format: *const c_char, timeptr: *mut libc::tm) -> *const c_char;
     fn strftime(buf: *mut c_char, maxsize: usize, format: *const c_char, timeptr: *mut libc::tm) -> usize;
 }
 
-pub fn parse_date(s: &str, fmt: &str) -> anyhow::Result<u64> {
-    let mut tm: libc::tm = unsafe { mem::zeroed() };
-    let cs = CString::new(s)?;
-    let cf = CString::new(fmt)?;
-    let ret = unsafe { strptime(cs.as_ptr(), cf.as_ptr(), &mut tm) };
-    if ret.is_null() {
-        bail!("Invalid date string: {}", s);
+pub fn parse_date(s: &str, fmt: &str) -> anyhow::Result<i64> {
+    use chrono::{DateTime, NaiveDate, Local, format::ParseErrorKind, TimeZone};
+    match DateTime::parse_from_str(s, fmt) {
+        Ok(dt) => {
+            Ok(dt.timestamp())
+        },
+        Err(e) => {
+            match e.kind() {
+                ParseErrorKind::NotEnough => {
+                    match Local.datetime_from_str(s, fmt) {
+                        Ok(dt) => {
+                            Ok(dt.timestamp())
+                        },
+                        Err(e) => {
+                            match e.kind() {
+                                ParseErrorKind::NotEnough => {
+                                    let dt = NaiveDate::parse_from_str(s, fmt)?
+                                        .and_hms_opt(0, 0, 0)
+                                        .ok_or_else(|| anyhow::anyhow!("Failed to parse date"))?
+                                        .and_local_timezone(Local)
+                                        .unwrap();
+                                    Ok(dt.timestamp())
+                                },
+                                _ => {
+                                    bail!(e);
+                                }
+                            }
+                        }
+                    }
+                },
+                _ => {
+                    bail!(e);
+                }
+            }
+        },
     }
-    let result = unsafe { libc::mktime(&mut tm) as u64 };
-    Ok(result)
+}
+
+#[cfg(windows)]
+pub fn localtime(timestamp: u64) -> Result<libc::tm, std::io::Error> {
+    use libc::localtime_s;
+
+    unsafe {
+        let mut tm = mem::zeroed();
+        let ts = timestamp as libc::time_t;
+        if localtime_s(&mut tm, &ts) != 0 {
+            Err(Error::last_os_error())
+        } else {
+            Ok(tm)
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn localtime(timestamp: u64) -> Result<libc::tm, std::io::Error> {
+    use libc::localtime_r;
+
+    unsafe {
+        let mut tm = mem::zeroed();
+        if localtime_r(mem::transmute(&timestamp), &mut tm).is_null() {
+            Err(Error::last_os_error())
+        } else {
+            Ok(tm)
+        }
+    }
 }
 
 pub fn format_date(timestamp: u64, fmt: &str) -> anyhow::Result<String> {
+    let mut tm = localtime(timestamp)?;
     unsafe {
-        let mut tm: libc::tm = mem::zeroed();
-        localtime_r(mem::transmute(&timestamp), &mut tm);
-        
         let mut buffer = [08; 4096];
         let cfmt = CString::new(fmt)?;
         let ret = strftime(buffer.as_mut_ptr() as *mut c_char, buffer.len(), cfmt.as_ptr(), &mut tm);
@@ -180,25 +236,81 @@ pub fn format_date(timestamp: u64, fmt: &str) -> anyhow::Result<String> {
     }
 }
 
-pub fn disk_free_space(path: impl AsRef<Path>) -> anyhow::Result<u64> {
+#[cfg(windows)]
+pub unsafe fn string_from_lpcwstr(ptr: *const u16) -> OsString {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::Globalization::lstrlenW;
+
+    let len = lstrlenW(ptr) as usize;
+    let slice = std::slice::from_raw_parts(ptr, len);
+
+    OsString::from_wide(slice)
+}
+
+#[cfg(windows)]
+pub fn last_win32_error() -> (u32, String) {
+    use windows_sys::Win32::Foundation::GetLastError;
+    use windows_sys::Win32::System::Diagnostics::Debug::{
+        FormatMessageW,
+        FORMAT_MESSAGE_ALLOCATE_BUFFER,
+        FORMAT_MESSAGE_FROM_SYSTEM
+    };
+    use windows_sys::Win32::System::Memory::LocalFree;
+
+    unsafe {
+        let last_error = GetLastError();
+        let mut buffer: *mut u16 = ptr::null_mut();
+        let ret = FormatMessageW(
+            FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+            ptr::null_mut(),
+            last_error,
+            0,
+            &mut buffer as *mut *mut u16 as *mut u16,
+            512,
+            ptr::null_mut());
+        if ret == 0 {
+            return (last_error, "Unknown error".to_string());
+        }
+
+        let s = string_from_lpcwstr(buffer);
+        LocalFree(buffer as isize);
+
+        (last_error, s.to_string_lossy().into_owned())
+    }
+}
+
+#[cfg(windows)]
+pub fn disk_free_space(path: impl AsRef<Path>) -> Result<u64, io::Error> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+
+    let mut buf: Vec<u16> = path.as_ref().as_os_str().encode_wide().collect();
+    buf.push(0);
+
+    let mut free_space = 0_u64;
+    if unsafe { GetDiskFreeSpaceExW(buf.as_ptr(), ptr::null_mut(), ptr::null_mut(), &mut free_space) } == 0 {
+        let (_, msg) = last_win32_error();
+        let trimmed_msg = msg.trim_end();
+        return Err(io::Error::new(io::ErrorKind::Other, trimmed_msg));
+    }
+
+    Ok(free_space)
+}
+
+#[cfg(not(windows))]
+pub fn disk_free_space(path: impl AsRef<Path>) -> Result<u64, io::Error> {
     use std::mem::MaybeUninit;
-    use std::io::Error;
 
     let mut st: MaybeUninit<libc::statvfs> = MaybeUninit::uninit();
     let p = CString::new(
         path
             .as_ref()
             .to_str()
-            .ok_or_else(|| anyhow::anyhow!("Invalid path: {}", path.as_ref().display()))?)?;
+            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Invalid filename"))?)?;
+
     let ret = unsafe { libc::statvfs(p.as_ptr(), st.as_mut_ptr()) };
     if ret != 0 {
-        let errno = Error::last_os_error().raw_os_error();
-        if let Some(errno) = errno {
-            let errmsg = unsafe { CStr::from_ptr(libc::strerror(errno)).to_string_lossy().to_string() };
-            bail!("Failed to get free disk space for {}: {errmsg}", path.as_ref().display());
-        } else {
-            bail!("Failed to get free disk space for {}", path.as_ref().display());
-        };
+        return Err(io::Error::last_os_error());
     }
 
     let st  = unsafe { st.assume_init() };
