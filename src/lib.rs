@@ -4,7 +4,14 @@ pub use log::LevelFilter;
 
 use anyhow::bail;
 use log::info;
-use std::{io::{self, Write, Error}, ffi::{c_char, CString, CStr}, mem, ptr, path::Path, borrow::Cow};
+use std::{
+    borrow::Cow,
+    ffi::{c_char, CStr, CString},
+    io::{self, Error, Write},
+    mem,
+    path::Path,
+    ptr,
+};
 
 #[cfg(windows)]
 use std::ffi::OsString;
@@ -24,7 +31,6 @@ macro_rules! regex {
         RE.get_or_init(|| regex::Regex::new($re).unwrap())
     }};
 }
-
 
 pub struct LoggerBuilder {
     show_source: bool,
@@ -75,14 +81,14 @@ impl LoggerBuilder {
         env_logger::builder()
             .filter_level(self.level)
             .format(move |buf, record| {
-                let ts = format_date(unsafe {
-                    libc::time(ptr::null_mut()) as u64
-                }, &self.date_format);
-                let ts =
-                    match ts {
-                        Ok(ts) => ts,
-                        Err(_) => "".to_string()
-                    };
+                let ts = format_date(
+                    unsafe { libc::time(ptr::null_mut()) as u64 },
+                    &self.date_format,
+                );
+                let ts = match ts {
+                    Ok(ts) => ts,
+                    Err(_) => "".to_string(),
+                };
                 if self.show_source {
                     let file = Path::new(record.file().unwrap_or(""));
                     writeln!(
@@ -97,14 +103,10 @@ impl LoggerBuilder {
                             Cow::from("")
                         },
                         record.line().unwrap_or(0),
-                        record.args())
+                        record.args()
+                    )
                 } else {
-                    writeln!(
-                        buf,
-                        "[{}][{}] {}",
-                        ts,
-                        record.level(),
-                        record.args())
+                    writeln!(buf, "[{}][{}] {}", ts, record.level(), record.args())
                 }
             })
             .init();
@@ -112,7 +114,6 @@ impl LoggerBuilder {
             log_exit: self.log_exit,
         }
     }
-
 }
 
 pub struct Logger {
@@ -139,8 +140,7 @@ impl Drop for Logger {
 
 #[deprecated]
 pub fn init_logging() {
-    let _ = Logger::builder()
-        .build();
+    let _ = Logger::builder().build();
 }
 
 pub struct LogExit {}
@@ -152,42 +152,37 @@ impl Drop for LogExit {
 }
 
 extern "C" {
-    fn strftime(buf: *mut c_char, maxsize: usize, format: *const c_char, timeptr: *mut libc::tm) -> usize;
+    fn strftime(
+        buf: *mut c_char,
+        maxsize: usize,
+        format: *const c_char,
+        timeptr: *mut libc::tm,
+    ) -> usize;
 }
 
 pub fn parse_date(s: &str, fmt: &str) -> anyhow::Result<i64> {
-    use chrono::{DateTime, NaiveDate, NaiveDateTime, format::ParseErrorKind, Local};
+    use chrono::{format::ParseErrorKind, DateTime, Local, NaiveDate, NaiveDateTime};
     match DateTime::parse_from_str(s, fmt) {
-        Ok(dt) => {
-            Ok(dt.timestamp())
-        },
-        Err(e) => {
-            match e.kind() {
-                ParseErrorKind::NotEnough => {
-                    match NaiveDateTime::parse_from_str(s, fmt) {
-                        Ok(dt) => {
-                            Ok(dt.timestamp())
-                        },
-                        Err(e) => {
-                            match e.kind() {
-                                ParseErrorKind::NotEnough => {
-                                    let dt = NaiveDate::parse_from_str(s, fmt)?
-                                        .and_hms_opt(0, 0, 0)
-                                        .ok_or_else(|| anyhow::anyhow!("Failed to parse date"))?
-                                        .and_local_timezone(Local)
-                                        .unwrap();
-                                    Ok(dt.timestamp())
-                                },
-                                _ => {
-                                    bail!(e);
-                                }
-                            }
-                        }
+        Ok(dt) => Ok(dt.timestamp()),
+        Err(e) => match e.kind() {
+            ParseErrorKind::NotEnough => match NaiveDateTime::parse_from_str(s, fmt) {
+                Ok(dt) => Ok(dt.timestamp()),
+                Err(e) => match e.kind() {
+                    ParseErrorKind::NotEnough => {
+                        let dt = NaiveDate::parse_from_str(s, fmt)?
+                            .and_hms_opt(0, 0, 0)
+                            .ok_or_else(|| anyhow::anyhow!("Failed to parse date"))?
+                            .and_local_timezone(Local)
+                            .unwrap();
+                        Ok(dt.timestamp())
+                    }
+                    _ => {
+                        bail!(e);
                     }
                 },
-                _ => {
-                    bail!(e);
-                }
+            },
+            _ => {
+                bail!(e);
             }
         },
     }
@@ -227,7 +222,12 @@ pub fn format_date(timestamp: u64, fmt: &str) -> anyhow::Result<String> {
     unsafe {
         let mut buffer = [08; 4096];
         let cfmt = CString::new(fmt)?;
-        let ret = strftime(buffer.as_mut_ptr() as *mut c_char, buffer.len(), cfmt.as_ptr(), &mut tm);
+        let ret = strftime(
+            buffer.as_mut_ptr() as *mut c_char,
+            buffer.len(),
+            cfmt.as_ptr(),
+            &mut tm,
+        );
         if ret == 0 && fmt.len() > 0 {
             bail!("Failed to format time");
         }
@@ -250,12 +250,10 @@ pub unsafe fn string_from_lpcwstr(ptr: *const u16) -> OsString {
 #[cfg(windows)]
 pub fn last_win32_error() -> (u32, String) {
     use winapi::um::errhandlingapi::GetLastError;
-    use winapi::um::winbase::{
-        FormatMessageW,
-        FORMAT_MESSAGE_ALLOCATE_BUFFER,
-        FORMAT_MESSAGE_FROM_SYSTEM
-    };
     use winapi::um::winbase::LocalFree;
+    use winapi::um::winbase::{
+        FormatMessageW, FORMAT_MESSAGE_ALLOCATE_BUFFER, FORMAT_MESSAGE_FROM_SYSTEM,
+    };
 
     unsafe {
         let last_error = GetLastError();
@@ -267,7 +265,8 @@ pub fn last_win32_error() -> (u32, String) {
             0,
             &mut buffer as *mut *mut u16 as *mut u16,
             512,
-            ptr::null_mut());
+            ptr::null_mut(),
+        );
         if ret == 0 {
             return (last_error, "Unknown error".to_string());
         }
@@ -290,10 +289,11 @@ pub fn disk_free_space(path: impl AsRef<Path>) -> Result<u64, io::Error> {
     let mut free_space = 0_u64;
     let ret = unsafe {
         GetDiskFreeSpaceExW(
-            buf.as_ptr(), 
-            ptr::null_mut(), 
-            ptr::null_mut(), 
-            mem::transmute(&mut free_space))
+            buf.as_ptr(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            mem::transmute(&mut free_space),
+        )
     };
     if ret == 0 {
         let (_, msg) = last_win32_error();
@@ -310,17 +310,17 @@ pub fn disk_free_space(path: impl AsRef<Path>) -> Result<u64, io::Error> {
 
     let mut st: MaybeUninit<libc::statvfs> = MaybeUninit::uninit();
     let p = CString::new(
-        path
-            .as_ref()
+        path.as_ref()
             .to_str()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Invalid filename"))?)?;
+            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Invalid filename"))?,
+    )?;
 
     let ret = unsafe { libc::statvfs(p.as_ptr(), st.as_mut_ptr()) };
     if ret != 0 {
         return Err(io::Error::last_os_error());
     }
 
-    let st  = unsafe { st.assume_init() };
+    let st = unsafe { st.assume_init() };
     if cfg!(target_os = "macos") {
         Ok(st.f_frsize as u64 * st.f_bfree as u64)
     } else if cfg!(target_os = "linux") {
@@ -334,13 +334,9 @@ pub fn disk_free_space(path: impl AsRef<Path>) -> Result<u64, io::Error> {
 mod tests {
     use crate::disk_free_space;
 
-
     #[test]
     fn test_disk_free_space() {
         let df = disk_free_space("/Users").unwrap();
         dbg!(&df);
     }
-
 }
-
-

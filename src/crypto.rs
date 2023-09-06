@@ -1,12 +1,11 @@
 use anyhow::Result;
 
 pub fn crypt_password(password: impl AsRef<str>, key: &[u8; 32]) -> String {
-    use aes_gcm::{Aes256Gcm, Nonce, KeyInit};
     use aes_gcm::aead::Aead;
+    use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
     use rand::Rng;
 
-    let cipher = Aes256Gcm::new_from_slice(key)
-        .expect("Invalid key size");
+    let cipher = Aes256Gcm::new_from_slice(key).expect("Invalid key size");
 
     let mut rng = rand::thread_rng();
     let mut nonce_bytes = [0u8; 12];
@@ -15,7 +14,8 @@ pub fn crypt_password(password: impl AsRef<str>, key: &[u8; 32]) -> String {
     }
     let nonce = Nonce::from_slice(&nonce_bytes);
 
-    let ciphertext = cipher.encrypt(nonce, password.as_ref().as_bytes())
+    let ciphertext = cipher
+        .encrypt(nonce, password.as_ref().as_bytes())
         .expect("encryption failure!");
     let mut salt_ciphertext = Vec::new();
     salt_ciphertext.extend_from_slice(&nonce_bytes);
@@ -26,9 +26,9 @@ pub fn crypt_password(password: impl AsRef<str>, key: &[u8; 32]) -> String {
 }
 
 pub fn decrypt_password(encoded_password: impl AsRef<str>, key: &[u8; 32]) -> Result<String> {
-    use aes_gcm::{Aes256Gcm, Nonce, KeyInit};
-    use aes_gcm::aead::generic_array::{GenericArray, typenum::U12};
+    use aes_gcm::aead::generic_array::{typenum::U12, GenericArray};
     use aes_gcm::aead::Aead;
+    use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 
     let salt_ciphertext = base64::decode(encoded_password.as_ref())?;
     let salt = salt_ciphertext[0..12].to_vec();
@@ -37,16 +37,10 @@ pub fn decrypt_password(encoded_password: impl AsRef<str>, key: &[u8; 32]) -> Re
     let nonce: GenericArray<_, U12> = Nonce::clone_from_slice(&salt);
     assert_eq!(nonce.len(), 12);
 
-    let cipher = Aes256Gcm::new_from_slice(key)
-        .expect("Invalid key length");
+    let cipher = Aes256Gcm::new_from_slice(key).expect("Invalid key length");
     let result = cipher.decrypt(&nonce, ciphertext.as_ref());
     match result {
-        Ok(plaintext) => {
-            Ok(String::from_utf8(plaintext)?)
-        },
-        Err(e) => {
-            Err(anyhow::anyhow!(e))
-        }
+        Ok(plaintext) => Ok(String::from_utf8(plaintext)?),
+        Err(e) => Err(anyhow::anyhow!(e)),
     }
 }
-
