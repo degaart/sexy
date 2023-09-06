@@ -156,7 +156,7 @@ extern "C" {
 }
 
 pub fn parse_date(s: &str, fmt: &str) -> anyhow::Result<i64> {
-    use chrono::{DateTime, NaiveDate, Local, format::ParseErrorKind, TimeZone};
+    use chrono::{DateTime, NaiveDate, NaiveDateTime, format::ParseErrorKind, Local};
     match DateTime::parse_from_str(s, fmt) {
         Ok(dt) => {
             Ok(dt.timestamp())
@@ -164,7 +164,7 @@ pub fn parse_date(s: &str, fmt: &str) -> anyhow::Result<i64> {
         Err(e) => {
             match e.kind() {
                 ParseErrorKind::NotEnough => {
-                    match Local.datetime_from_str(s, fmt) {
+                    match NaiveDateTime::parse_from_str(s, fmt) {
                         Ok(dt) => {
                             Ok(dt.timestamp())
                         },
