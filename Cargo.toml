@@ -1,6 +1,6 @@
 [package]
 name = "sexy"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 
 [dependencies]
@@ -9,10 +9,12 @@ anyhow = "1.0"
 base64 = { version = "0.13.0", optional = true }
 chrono = "0.4.24"
 env_logger = "0.9"
+lettre = { version = "0.10.4", features = ["native-tls"], optional = true }
 libc = "0.2.133"
 log = "0.4"
 rand = { version = "0.8.5", optional = true }
 regex = "1.5"
+native-tls = { version = "0.2.11", features = ["vendored"], optional = true }
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3.9"
@@ -20,4 +22,5 @@ winapi = "0.3.9"
 [features]
 default = []
 crypto = ["dep:aes-gcm", "dep:rand", "dep:base64"]
+mail = [ "dep:lettre" ]
 

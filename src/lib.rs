@@ -19,6 +19,9 @@ use std::ffi::OsString;
 #[cfg(feature = "crypto")]
 pub mod crypto;
 
+#[cfg(feature = "mail")]
+pub mod mail;
+
 #[macro_export]
 macro_rules! regex {
     ($re:literal $(,)?) => {{
