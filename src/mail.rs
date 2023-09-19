@@ -3,7 +3,7 @@ use lettre::{
     message::header::ContentType,
     transport::smtp::{
         authentication::Credentials,
-        client::{Tls, TlsParameters}
+        client::{Tls, TlsParameters},
     },
     Message, SmtpTransport, Transport,
 };
@@ -39,10 +39,7 @@ pub fn send_mail(
 
     let message = message_builder.body(body.to_string())?;
 
-    let creds = Credentials::new(
-        login.to_string(),
-        password.to_string(),
-    );
+    let creds = Credentials::new(login.to_string(), password.to_string());
     let tls = TlsParameters::builder(server.to_string())
         .dangerous_accept_invalid_certs(true)
         .build()?;
@@ -62,10 +59,15 @@ pub fn send_mail(
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::{BufReader, BufRead}, collections::HashMap, path::Path};
     use super::send_mail;
+    use std::{
+        collections::HashMap,
+        fs::File,
+        io::{BufRead, BufReader},
+        path::Path,
+    };
 
-    fn read_config(f: &Path) -> Result<HashMap<String,String>, std::io::Error> {
+    fn read_config(f: &Path) -> Result<HashMap<String, String>, std::io::Error> {
         let mut result = HashMap::new();
         let f = BufReader::new(File::open(f)?);
         for line in f.lines() {
@@ -101,7 +103,7 @@ mod tests {
         };
         let bcc = match config.get("bcc") {
             Some(bcc) => vec![bcc.clone()],
-            None => vec![]
+            None => vec![],
         };
 
         send_mail(
@@ -115,9 +117,8 @@ mod tests {
             &cc,
             &bcc,
             "Test mail",
-            "-= This is a test mail =-")
+            "-= This is a test mail =-",
+        )
         .unwrap();
     }
 }
-
-
