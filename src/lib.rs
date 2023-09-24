@@ -333,13 +333,118 @@ pub fn disk_free_space(path: impl AsRef<Path>) -> Result<u64, io::Error> {
     }
 }
 
+const EPOCH_YEAR: u32 = 1970;
+const DAYS_IN_MONTH: [u32;13] = [ 0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 ];
+const MONTH_DAY_OFFSETS: [u32;13] = [ 0, 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 ];
+const DAYS_PER_YEAR: u64 = 365;
+const SECONDS_PER_DAY: u64 = 86400;
+const SECONDS_PER_HOUR: u64 = 3600;
+const SECONDS_PER_MINUTE: u64 = 60;
+
+#[derive(Debug, Clone)]
+pub struct DateToUnixError {
+    msg: String,
+    val: u32,
+}
+
+impl DateToUnixError {
+    fn new(msg: &str, val: u32) -> Self {
+        Self { msg: msg.to_string(), val }
+    }
+}
+
+impl std::fmt::Display for DateToUnixError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.msg, self.val)
+    }
+}
+
+pub fn date_to_unix(year: u32, mon: u32, day: u32, hour: u32, min: u32, sec: u32) -> Result<u64, DateToUnixError> {
+    if year < EPOCH_YEAR {
+        return Err(DateToUnixError::new("Invalid year", year));
+    } else if mon < 1 || mon > 12 {
+        return Err(DateToUnixError::new("Invalid month", mon));
+    } else if day < 1 {
+        return Err(DateToUnixError::new("Invalid day", day));
+    } else if hour > 23 {
+        return Err(DateToUnixError::new("Invalid hour", hour));
+    } else if min > 59 {
+        return Err(DateToUnixError::new("Invalid minute", min));
+    } else if sec > 59 {
+        return Err(DateToUnixError::new("Invalid second", sec));
+    }
+
+    let mut is_leap = (year % 4) == 0;
+    if year % 100 == 0 {
+        is_leap = false;
+    }
+    if year % 400 == 0 {
+        is_leap = true;
+    }
+
+    let mut days_in_month = DAYS_IN_MONTH[mon as usize];
+    if mon == 2 && is_leap {
+        days_in_month += 1;
+    }
+
+    if day > days_in_month {
+        return Err(DateToUnixError::new("Invalid day", day));
+    }
+
+    /* years */
+    let mut result = (year - EPOCH_YEAR) as u64 * DAYS_PER_YEAR * SECONDS_PER_DAY;
+
+    /* leap years, by 4 */
+    result += ((year - 1969) / 4) as u64 * SECONDS_PER_DAY;
+
+    /* leap years, by 100 */
+    result -= ((year - 1901) / 100) as u64 * SECONDS_PER_DAY;
+
+    /* leap years, by 400 */
+    result += ((year - 1601) / 400) as u64 * SECONDS_PER_DAY;
+
+    /* months */
+    result += MONTH_DAY_OFFSETS[mon as usize] as u64 * SECONDS_PER_DAY;
+    if mon > 2 && is_leap {
+        result += SECONDS_PER_DAY;
+    }
+
+    /* days */
+    result += (day - 1) as u64 * SECONDS_PER_DAY;
+
+    /* hour */
+    result += hour as u64 * SECONDS_PER_HOUR;
+
+    /* minute */
+    result += min as u64 * SECONDS_PER_MINUTE;
+
+    /* seconds */
+    result += sec as u64;
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::disk_free_space;
+    use crate::{disk_free_space, date_to_unix};
 
     #[test]
     fn test_disk_free_space() {
         let df = disk_free_space("/Users").unwrap();
         dbg!(&df);
     }
+
+    #[test]
+    fn test_date_to_unix() {
+        assert_eq!(0,          date_to_unix(1970, 1, 1, 0, 0, 0).unwrap());
+        assert_eq!(504921600,  date_to_unix(1986, 1, 1, 0, 0, 0).unwrap());
+        assert_eq!(536457599,  date_to_unix(1986, 12, 31, 23, 59, 59).unwrap());
+        assert_eq!(1234567890, date_to_unix(2009, 2, 13, 23, 31, 30).unwrap());
+        assert_eq!(2147483647, date_to_unix(2038, 1, 19, 3, 14, 7).unwrap());
+        assert_eq!(2147483648, date_to_unix(2038, 1, 19, 3, 14, 8).unwrap());
+        assert_eq!(4294967295, date_to_unix(2106, 2, 7, 6, 28, 15).unwrap());
+        assert_eq!(4294967296, date_to_unix(2106, 2, 7, 6, 28, 16).unwrap());
+    }
 }
+
+
