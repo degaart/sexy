@@ -1,9 +1,12 @@
+#![allow(deprecated)]
+
 pub mod ffi;
 
 pub use log::LevelFilter;
 
 use anyhow::bail;
 use log::info;
+use rand::Rng;
 use std::{
     borrow::Cow,
     ffi::{c_char, CStr, CString},
@@ -424,8 +427,56 @@ pub fn date_to_unix(year: u32, mon: u32, day: u32, hour: u32, min: u32, sec: u32
     Ok(result)
 }
 
+pub const LOWER: u32 = 1;
+pub const UPPER: u32 = 2;
+pub const ALPHA: u32 = LOWER | UPPER;
+pub const NUMERIC: u32 = 4;
+pub const ALPHANUMERIC: u32 = ALPHA | NUMERIC;
+pub const SPACE: u32 = 8;
+pub const DASH: u32 = 16;
+pub const UNDERSCORE: u32 = 32;
+
+pub fn gen_random_string(length: usize, charset: u32) -> String {
+    let mut chars = Vec::new();
+    if (charset & LOWER) != 0 {
+        for i in 'a'..'z' {
+            chars.push(i);
+        }
+    }
+    if (charset & UPPER) != 0 {
+        for i in 'A'..'Z' {
+            chars.push(i);
+        }
+    }
+    if (charset & NUMERIC) != 0 {
+        for i in '0'..'9' {
+            chars.push(i);
+        }
+    }
+    if (charset & SPACE) != 0 {
+        chars.push(' ');
+    }
+    if (charset & DASH) != 0 {
+        chars.push('-');
+    }
+    if(charset & UNDERSCORE) != 0 {
+        chars.push('_');
+    }
+    assert_ne!(chars.len(), 0);
+
+    let mut rng = rand::thread_rng();
+    let mut result = Vec::new();
+    for _ in 0..length {
+        result.push(chars[rng.gen_range(0..chars.len())]);
+    }
+
+    String::from_iter(&result)
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use crate::{disk_free_space, date_to_unix};
 
     #[test]
@@ -445,6 +496,14 @@ mod tests {
         assert_eq!(4294967295, date_to_unix(2106, 2, 7, 6, 28, 15).unwrap());
         assert_eq!(4294967296, date_to_unix(2106, 2, 7, 6, 28, 16).unwrap());
     }
-}
 
+    #[test]
+    fn test_random_string() {
+        let charset = ALPHANUMERIC | SPACE | DASH | UNDERSCORE;
+        let length = 128;
+        let result = gen_random_string(length, charset);
+        println!("{result}");
+    }
+
+}
 

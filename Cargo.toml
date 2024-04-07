@@ -12,7 +12,7 @@ env_logger = "0.9"
 lettre = { version = "0.10.4", features = ["native-tls"], optional = true }
 libc = "0.2.133"
 log = "0.4"
-rand = { version = "0.8.5", optional = true }
+rand = "0.8.5"
 regex = "1.5"
 native-tls = { version = "0.2.11", features = ["vendored"], optional = true }
 
@@ -21,6 +21,6 @@ winapi = "0.3.9"
 
 [features]
 default = []
-crypto = ["dep:aes-gcm", "dep:rand", "dep:base64"]
+crypto = ["dep:aes-gcm", "dep:base64"]
 mail = [ "dep:lettre" ]
 
