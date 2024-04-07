@@ -473,6 +473,23 @@ pub fn gen_random_string(length: usize, charset: u32) -> String {
     String::from_iter(&result)
 }
 
+pub const BASE64_NO_PAD: u32 = 0;
+pub const BASE64_PAD: u32 = 1;
+
+pub fn base64_encode(data: &[u8], flags: u32) -> String {
+    use base64::engine::Engine;
+    if (flags & BASE64_PAD) != 0 {
+        base64::engine::general_purpose::STANDARD.encode(data)
+    } else {
+        base64::engine::general_purpose::STANDARD_NO_PAD.encode(data)
+    }
+}
+
+pub fn base64_decode(encoded: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    use base64::engine::Engine;
+    base64::engine::general_purpose::STANDARD.decode(encoded)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
